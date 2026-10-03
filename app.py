@@ -1,3 +1,4 @@
+
 import os
 import streamlit as st
 import stripe
@@ -30,11 +31,69 @@ DB_NAME = os.getenv("DB_NAME", "kaligpt_trading")
 
 # Configuration de la page Streamlit
 st.set_page_config(
-    page_title="KaliGPT - Trading, IA & MariaDB", page_icon="🤖", layout="wide"
+    page_title="KaliGPT - Trading, Dark Mode & MariaDB", page_icon="🤖", layout="wide"
 )
 
-st.title("🤖 KaliGPT - Assistant de Trading & IA Active")
-st.write("Interface unifiée : Marché en direct, RSI, Historique MariaDB, Stripe et Chat Gemini.")
+# --- STYLE CSS PERSONNALISÉ (DARK MODE TRADING) ---
+st.markdown(
+    """
+    <style>
+    /* Fond global de l'application */
+    .stApp {
+        background-color: #0e1117;
+        color: #c9d1d9;
+    }
+
+    /* Style des conteneurs / cartes */
+    div[data-testid="stVerticalBlock"] > div[style*="border"] {
+        border-color: #30363d !important;
+        background-color: #161b22;
+        border-radius: 10px;
+        padding: 15px;
+    }
+
+    /* Boutons principaux */
+    .stButton > button {
+        background: linear-gradient(135deg, #238636 0%, #2ea043 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-weight: bold;
+        transition: 0.3s ease;
+    }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #2ea043 0%, #3fb950 100%);
+        box-shadow: 0 0 10px rgba(46, 160, 67, 0.4);
+    }
+
+    /* Champs de saisie et formulaires */
+    .stTextInput > div > div > input, .stNumberInput > div > div > input, .stSelectbox > div > div > div {
+        background-color: #0d1117;
+        color: #c9d1d9;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+    }
+
+    /* Sidebar élégante */
+    section[data-testid="stSidebar"] {
+        background-color: #161b22;
+        border-right: 1px solid #30363d;
+    }
+
+    /* Métriques */
+    div[data-testid="stMetric"] {
+        background-color: #161b22;
+        border: 1px solid #30363d;
+        padding: 15px;
+        border-radius: 8px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("🤖 KaliGPT - Terminal de Trading Pro")
+st.write("Interface unifiée : Marché en direct, RSI, Historique MariaDB, Stripe et IA contextuelle.")
 
 
 # --- FONCTIONS BASE DE DONNÉES (MARIADB) ---
@@ -272,7 +331,7 @@ elif "canceled" in query_params and query_params["canceled"] == "true":
 
 # --- 7. SECTION CHAT AVEC GEMINI (KALI GPT) ---
 st.divider()
-st.subheader("💬 Discussion avec KaliGPT (propulsé par Gemini)")
+st.subheader("💬 Discussion avec KaliGPT (IA Contextuelle & MariaDB)")
 
 if "messages" not in st.session_state:
   st.session_state.messages = []
@@ -281,22 +340,38 @@ for message in st.session_state.messages:
   with st.chat_message(message["role"]):
     st.markdown(message["content"])
 
-if prompt := st.chat_input("Posez vos questions sur le trading, les stratégies ou le RSI..."):
+if prompt := st.chat_input("Posez vos questions sur le trading, vos ordres ou vos stratégies..."):
   st.session_state.messages.append({"role": "user", "content": prompt})
   with st.chat_message("user"):
     st.markdown(prompt)
 
   with st.chat_message("assistant"):
-    with st.spinner("KaliGPT réfléchit..."):
+    with st.spinner("KaliGPT analyse vos ordres et réfléchit..."):
       if not ai_client:
         response_text = "Erreur : La clé API Gemini (`GEMINI_API_KEY`) n'est pas configurée dans votre fichier .env."
         st.markdown(response_text)
       else:
         try:
-          # Appel au modèle Gemini via le client officiel
+          # Récupération automatique du contexte des derniers ordres pour l'IA
+          df_orders_context = get_orders_from_db()
+          orders_summary = (
+              df_orders_context.head(5).to_string()
+              if df_orders_context is not None and not df_orders_context.empty
+              else "Aucun ordre enregistré pour le moment."
+          )
+
+          # Construction du prompt système enrichi avec les données de l'utilisateur
+          system_prompt = f"""
+          Tu es KaliGPT, un assistant de trading expert, technique, concis et professionnel.
+          Voici le contexte récent de l'utilisateur extrait de sa base de données MariaDB :
+          - Derniers ordres enregistrés :
+          {orders_summary}
+          
+          Réponds à la question suivante de l'utilisateur en tenant compte de ce contexte de trading : {prompt}
+          """
+
           response = ai_client.models.generate_content(
-              model="gemini-2.5-flash",
-              contents=f"En tant qu'assistant de trading expert nommé KaliGPT, réponds de manière concise et professionnelle à cette question : {prompt}",
+              model="gemini-2.5-flash", contents=system_prompt
           )
           response_text = response.text
           st.markdown(response_text)
