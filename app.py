@@ -1,5 +1,6 @@
 import streamlit as st
 import pymysql
+import pandas as pd
 import plotly.graph_objects as go
 from openai import OpenAI
 
@@ -20,11 +21,17 @@ st.set_page_config(
 st.title("📈 KaliGPT - Station de Trading & IA")
 st.markdown("Plateforme centralisée d'analyse, de trading et d'assistant intelligent.")
 
-# Barre latérale (Sidebar) pour les paramètres généraux
+# Barre latérale (Sidebar) pour les paramètres généraux et indicateurs
 with st.sidebar:
     st.header("⚙ Configuration")
     model_choice = st.selectbox("Modèle IA actif", ["gpt-4o-mini", "gpt-3.5-turbo"])
     temperature = st.slider("Température", 0.0, 1.0, 0.7)
+    
+    st.divider()
+    st.subheader("📊 Indicateurs Techniques")
+    show_sma = st.checkbox("Afficher la Moyenne Mobile (SMA)", value=True)
+    sma_period = st.slider("Période SMA", min_value=2, max_value=10, value=3)
+    
     st.divider()
     st.info("Environnement : Linux / Streamlit local")
 
@@ -35,22 +42,18 @@ tab_chat, tab_trading, tab_db = st.tabs(["💬 Assistant IA", "📊 Dashboard Tr
 with tab_chat:
     st.header("Discuter avec KaliGPT")
 
-    # Initialisation de l'historique des messages
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Affichage de l'historique des messages
     for message in st.session_state.messages:
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
-    # Entrée utilisateur pour le chat
     if prompt := st.chat_input("Posez votre question à KaliGPT..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Appel à l'API du modèle
         with st.chat_message("assistant"):
             message_placeholder = st.empty()
             message_placeholder.markdown("Réflexion en cours...")
@@ -76,7 +79,7 @@ with tab_chat:
                 error_msg = f"Erreur lors de la communication avec l'API : {e}"
                 message_placeholder.error(error_msg)
 
-# --- ONGLET 2 : DASHBOARD TRADING (Plotly, Formulaire & Historique) ---
+# --- ONGLET 2 : DASHBOARD TRADING (Chandeliers, Moyenne Mobile, Ordres & Historique) ---
 with tab_trading:
     st.header("Suivi des Marchés & Stratégies")
     
@@ -85,26 +88,52 @@ with tab_trading:
     col2.metric("Dernier Signal", "Achat", "Fiabilité 85%")
     col3.metric("Statut Bot", "Actif", "En ligne")
     
-    st.subheader("Analyse Graphique Avancée")
+    st.subheader("Analyse Graphique & Indicateurs")
     
-    # Données de test pour le graphique en chandeliers (Candlestick)
-    fig = go.Figure(data=[go.Candlestick(
-        x=['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04'],
-        open=[60000, 61200, 60800, 62100],
-        high=[61500, 62000, 62500, 63000],
-        low=[59800, 60500, 60200, 61800],
-        close=[61200, 60800, 62100, 62900]
-    )])
-    
+    # Préparation des données sous forme de DataFrame Pandas
+    data = {
+        'Date': ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06'],
+        'Open': [60000, 61200, 60800, 62100, 61500, 62300],
+        'High': [61500, 62000, 62500, 63000, 62800, 63500],
+        'Low': [59800, 60500, 60200, 61800, 61000, 62000],
+        'Close': [61200, 60800, 62100, 62900, 62200, 63100]
+    }
+
+    df = pd.DataFrame(data)
+    df['Date'] = pd.to_datetime(df['Date'])
+
+    # Création du graphique Plotly
+    fig = go.Figure()
+
+    # Ajout des chandeliers
+    fig.add_trace(go.Candlestick(
+        x=df['Date'],
+        open=df['Open'],
+        high=df['High'],
+        low=df['Low'],
+        close=df['Close'],
+        name='Chandeliers'
+    ))
+
+    # Ajout dynamique de la Moyenne Mobile si activée dans la sidebar
+    if show_sma:
+        df['SMA'] = df['Close'].rolling(window=sma_period).mean()
+        fig.add_trace(go.Scatter(
+            x=df['Date'],
+            y=df['SMA'],
+            mode='lines',
+            name=f'SMA {sma_period}',
+            line=dict(color='orange', width=2)
+        ))
+
     fig.update_layout(
-        title="Évolution du BTC/USD",
+        title="Évolution du BTC/USD & Moyenne Mobile",
         xaxis_title="Date",
         yaxis_title="Prix (USD)",
         template="plotly_dark",
         height=450
     )
     
-    # Affichage du graphique interactif Plotly
     st.plotly_chart(fig, use_container_width=True)
 
     st.divider()
@@ -169,7 +198,7 @@ with tab_trading:
                 st.info("Aucun ordre enregistré pour le moment.")
                 
     except Exception as e:
-        st.warning(f"Impossible de charger l'historique (Vérifiez que la base et la table existent dans l'onglet Base de données) : {e}")
+        st.warning(f"Impossible de charger l'historique : {e}")
     finally:
         if 'connection' in locals() and connection.open:
             connection.close()
