@@ -1,6 +1,22 @@
+Voici le code complet et mis à jour de votre fichier app.py. Il intègre l'ensemble de vos briques de développement :
+
+L'Assistant IA (prêt pour l'API OpenAI avec gestion dynamique).
+
+Le Dashboard de Trading interactif propulsé par Plotly (graphiques en chandeliers).
+
+La gestion complète de MariaDB (test de connexion, création automatique de la base et des tables market_prices et trading_orders).
+
+Python
 import streamlit as st
 import pymysql
 import plotly.graph_objects as go
+from openai import OpenAI
+
+# Initialisation du client OpenAI (récupère automatiquement la clé depuis les variables d'environnement)
+try:
+    client = OpenAI()
+except Exception:
+    client = None
 
 # Configuration de la page (doit toujours être en premier)
 st.set_page_config(
@@ -15,8 +31,8 @@ st.markdown("Plateforme centralisée d'analyse, de trading et d'assistant intell
 
 # Barre latérale (Sidebar) pour les paramètres généraux
 with st.sidebar:
-    st.header("⚙️ Configuration")
-    model_choice = st.selectbox("Modèle IA actif", ["KaliGPT-Standard", "KaliGPT-Trading"])
+    st.header("⚙️️ Configuration")
+    model_choice = st.selectbox("Modèle IA actif", ["gpt-4o-mini", "gpt-3.5-turbo"])
     temperature = st.slider("Température", 0.0, 1.0, 0.7)
     st.divider()
     st.info("Environnement : Linux / Streamlit local")
@@ -43,12 +59,31 @@ with tab_chat:
         with st.chat_message("user"):
             st.markdown(prompt)
 
-        # Réponse simulée de l'assistant (prête pour connexion API future)
-        response = f"Réponse de {model_choice} concernant : '{prompt}'"
-        
-        st.session_state.messages.append({"role": "assistant", "content": response})
+        # Appel à l'API du modèle
         with st.chat_message("assistant"):
-            st.markdown(response)
+            message_placeholder = st.empty()
+            message_placeholder.markdown("Réflexion en cours...")
+            
+            try:
+                if client is None:
+                    raise ValueError("Client API non initialisé. Vérifiez votre clé OPENAI_API_KEY.")
+                
+                response = client.chat.completions.create(
+                    model=model_choice,
+                    messages=[
+                        {"role": m["role"], "content": m["content"]}
+                        for m in st.session_state.messages
+                    ],
+                    temperature=temperature
+                )
+                
+                assistant_response = response.choices[0].message.content
+                message_placeholder.markdown(assistant_response)
+                st.session_state.messages.append({"role": "assistant", "content": assistant_response})
+
+            except Exception as e:
+                error_msg = f"Erreur lors de la communication avec l'API : {e}"
+                message_placeholder.error(error_msg)
 
 # --- ONGLET 2 : DASHBOARD TRADING (Avec Plotly) ---
 with tab_trading:
@@ -83,31 +118,71 @@ with tab_trading:
 
 # --- ONGLET 3 : BASE DE DONNÉES ---
 with tab_db:
-    st.header("Gestion MariaDB")
-    st.markdown("Connexion à votre base de données de trading locale.")
+    st.header("Gestion & Initialisation MariaDB")
+    st.markdown("Configurez votre connexion et initialisez vos tables de trading automatiquement.")
 
     with st.form("db_config_form"):
         db_host = st.text_input("Hôte (Host)", value="localhost")
         db_user = st.text_input("Utilisateur (User)", value="root")
         db_password = st.text_input("Mot de passe", type="password")
         db_name = st.text_input("Nom de la base de données", value="trading_db")
-        submit_btn = st.form_submit_button("Tester la connexion")
+        
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            test_btn = st.form_submit_button("Tester la connexion")
+        with col_btn2:
+            init_btn = st.form_submit_button("Créer les tables automatiques")
 
-    if submit_btn:
+    if test_btn or init_btn:
         try:
             connection = pymysql.connect(
                 host=db_host,
                 user=db_user,
                 password=db_password,
-                database=db_name,
                 cursorclass=pymysql.cursors.DictCursor
             )
+            
             with connection.cursor() as cursor:
-                cursor.execute("SELECT VERSION();")
-                db_version = cursor.fetchone()
-                st.success(f"Connexion réussie à MariaDB ! Version du serveur : {list(db_version.values())[0]}")
+                # Création de la base si elle n'existe pas
+                cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}`;")
+                cursor.execute(f"USE `{db_name}`;")
+                
+                if test_btn:
+                    cursor.execute("SELECT VERSION();")
+                    db_version = cursor.fetchone()
+                    st.success(f"Connexion réussie ! Version MariaDB : {list(db_version.values())[0]}")
+
+                if init_btn:
+                    # Création de la table des prix de marché
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS market_prices (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            symbol VARCHAR(20) NOT NULL,
+                            price DECIMAL(18, 8) NOT NULL,
+                            high DECIMAL(18, 8),
+                            low DECIMAL(18, 8),
+                            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    
+                    # Création de la table des ordres de trading
+                    cursor.execute("""
+                        CREATE TABLE IF NOT EXISTS trading_orders (
+                            id INT AUTO_INCREMENT PRIMARY KEY,
+                            symbol VARCHAR(20) NOT NULL,
+                            order_type VARCHAR(10) NOT NULL,
+                            amount DECIMAL(18, 8) NOT NULL,
+                            price DECIMAL(18, 8) NOT NULL,
+                            status VARCHAR(20) DEFAULT 'PENDING',
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    
+                    connection.commit()
+                    st.success("Tables `market_prices` et `trading_orders` créées avec succès dans MariaDB !")
+
         except Exception as e:
-            st.error(f"Erreur de connexion à MariaDB : {e}")
+            st.error(f"Erreur avec MariaDB : {e}")
         finally:
             if 'connection' in locals() and connection.open:
                 connection.close()
