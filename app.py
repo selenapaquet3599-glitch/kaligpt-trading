@@ -22,7 +22,7 @@ st.markdown("Plateforme centralisée d'analyse, de trading et d'assistant intell
 
 # Barre latérale (Sidebar) pour les paramètres généraux
 with st.sidebar:
-    st.header("⚙️️ Configuration")
+    st.header("⚙ Configuration")
     model_choice = st.selectbox("Modèle IA actif", ["gpt-4o-mini", "gpt-3.5-turbo"])
     temperature = st.slider("Température", 0.0, 1.0, 0.7)
     st.divider()
@@ -76,7 +76,7 @@ with tab_chat:
                 error_msg = f"Erreur lors de la communication avec l'API : {e}"
                 message_placeholder.error(error_msg)
 
-# --- ONGLET 2 : DASHBOARD TRADING (Avec Plotly & Formulaire d'ordres) ---
+# --- ONGLET 2 : DASHBOARD TRADING (Plotly, Formulaire & Historique) ---
 with tab_trading:
     st.header("Suivi des Marchés & Stratégies")
     
@@ -123,7 +123,6 @@ with tab_trading:
 
     if submit_order:
         try:
-            # Connexion à MariaDB (à adapter si vous utilisez un mot de passe spécifique)
             connection = pymysql.connect(
                 host="localhost",
                 user="root",
@@ -147,6 +146,33 @@ with tab_trading:
         finally:
             if 'connection' in locals() and connection.open:
                 connection.close()
+
+    st.divider()
+    st.subheader("📋 Historique des ordres enregistrés")
+    
+    try:
+        connection = pymysql.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="trading_db",
+            cursorclass=pymysql.cursors.DictCursor
+        )
+        
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT * FROM trading_orders ORDER BY created_at DESC;")
+            orders = cursor.fetchall()
+            
+            if orders:
+                st.dataframe(orders, use_container_width=True)
+            else:
+                st.info("Aucun ordre enregistré pour le moment.")
+                
+    except Exception as e:
+        st.warning(f"Impossible de charger l'historique (Vérifiez que la base et la table existent dans l'onglet Base de données) : {e}")
+    finally:
+        if 'connection' in locals() and connection.open:
+            connection.close()
 
 # --- ONGLET 3 : BASE DE DONNÉES ---
 with tab_db:
@@ -175,7 +201,6 @@ with tab_db:
             )
             
             with connection.cursor() as cursor:
-                # Création de la base si elle n'existe pas
                 cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{db_name}`;")
                 cursor.execute(f"USE `{db_name}`;")
                 
@@ -185,7 +210,6 @@ with tab_db:
                     st.success(f"Connexion réussie ! Version MariaDB : {list(db_version.values())[0]}")
 
                 if init_btn:
-                    # Création de la table des prix de marché
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS market_prices (
                             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -197,7 +221,6 @@ with tab_db:
                         );
                     """)
                     
-                    # Création de la table des ordres de trading
                     cursor.execute("""
                         CREATE TABLE IF NOT EXISTS trading_orders (
                             id INT AUTO_INCREMENT PRIMARY KEY,
