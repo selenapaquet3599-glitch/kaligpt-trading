@@ -1,12 +1,3 @@
-Voici le code complet et mis à jour de votre fichier app.py. Il intègre l'ensemble de vos briques de développement :
-
-L'Assistant IA (prêt pour l'API OpenAI avec gestion dynamique).
-
-Le Dashboard de Trading interactif propulsé par Plotly (graphiques en chandeliers).
-
-La gestion complète de MariaDB (test de connexion, création automatique de la base et des tables market_prices et trading_orders).
-
-Python
 import streamlit as st
 import pymysql
 import plotly.graph_objects as go
@@ -85,7 +76,7 @@ with tab_chat:
                 error_msg = f"Erreur lors de la communication avec l'API : {e}"
                 message_placeholder.error(error_msg)
 
-# --- ONGLET 2 : DASHBOARD TRADING (Avec Plotly) ---
+# --- ONGLET 2 : DASHBOARD TRADING (Avec Plotly & Formulaire d'ordres) ---
 with tab_trading:
     st.header("Suivi des Marchés & Stratégies")
     
@@ -115,6 +106,47 @@ with tab_trading:
     
     # Affichage du graphique interactif Plotly
     st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+    st.subheader("📝 Passer un nouvel ordre de trading")
+    
+    with st.form("order_form"):
+        col_o1, col_o2 = st.columns(2)
+        with col_o1:
+            order_symbol = st.selectbox("Actif", ["BTC/USD", "ETH/USD", "XRP/USD"])
+            order_type = st.selectbox("Type d'ordre", ["BUY", "SELL"])
+        with col_o2:
+            order_amount = st.number_input("Quantité / Montant", min_value=0.0001, value=1.0, format="%.4f")
+            order_price = st.number_input("Prix d'exécution (USD)", min_value=0.01, value=60000.0, format="%.2f")
+            
+        submit_order = st.form_submit_button("Exécuter et enregistrer l'ordre")
+
+    if submit_order:
+        try:
+            # Connexion à MariaDB (à adapter si vous utilisez un mot de passe spécifique)
+            connection = pymysql.connect(
+                host="localhost",
+                user="root",
+                password="",
+                database="trading_db",
+                cursorclass=pymysql.cursors.DictCursor
+            )
+            
+            with connection.cursor() as cursor:
+                sql = """
+                    INSERT INTO trading_orders (symbol, order_type, amount, price, status) 
+                    VALUES (%s, %s, %s, %s, 'EXECUTED')
+                """
+                cursor.execute(sql, (order_symbol, order_type, order_amount, order_price))
+                connection.commit()
+                
+                st.success(f"Ordre {order_type} de {order_amount} {order_symbol} enregistré avec succès à {order_price} USD !")
+                
+        except Exception as e:
+            st.error(f"Erreur lors de l'enregistrement de l'ordre dans MariaDB : {e}")
+        finally:
+            if 'connection' in locals() and connection.open:
+                connection.close()
 
 # --- ONGLET 3 : BASE DE DONNÉES ---
 with tab_db:
