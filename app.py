@@ -2,6 +2,7 @@ import streamlit as st
 import pymysql
 import pandas as pd
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from openai import OpenAI
 
 # Initialisation du client OpenAI (récupère automatiquement la clé depuis les variables d'environnement)
@@ -21,7 +22,7 @@ st.set_page_config(
 st.title("📈 KaliGPT - Station de Trading & IA")
 st.markdown("Plateforme centralisée d'analyse, de trading et d'assistant intelligent.")
 
-# Barre latérale (Sidebar) pour les paramètres généraux et indicateurs
+# Barre latérale (Sidebar) pour les paramètres généraux et indicateurs techniques
 with st.sidebar:
     st.header("⚙ Configuration")
     model_choice = st.selectbox("Modèle IA actif", ["gpt-4o-mini", "gpt-3.5-turbo"])
@@ -29,8 +30,16 @@ with st.sidebar:
     
     st.divider()
     st.subheader("📊 Indicateurs Techniques")
+    
+    # Options Moyenne Mobile (SMA)
     show_sma = st.checkbox("Afficher la Moyenne Mobile (SMA)", value=True)
-    sma_period = st.slider("Période SMA", min_value=2, max_value=10, value=3)
+    sma_period = st.slider("Période SMA", min_value=2, max_value=20, value=3)
+    
+    st.divider()
+    
+    # Options RSI
+    show_rsi = st.checkbox("Afficher le RSI", value=True)
+    rsi_period = st.slider("Période RSI", min_value=5, max_value=30, value=14)
     
     st.divider()
     st.info("Environnement : Linux / Streamlit local")
@@ -79,7 +88,7 @@ with tab_chat:
                 error_msg = f"Erreur lors de la communication avec l'API : {e}"
                 message_placeholder.error(error_msg)
 
-# --- ONGLET 2 : DASHBOARD TRADING (Chandeliers, Moyenne Mobile, Ordres & Historique) ---
+# --- ONGLET 2 : DASHBOARD TRADING (Chandeliers, SMA, RSI, Ordres & Historique) ---
 with tab_trading:
     st.header("Suivi des Marchés & Stratégies")
     
@@ -88,24 +97,42 @@ with tab_trading:
     col2.metric("Dernier Signal", "Achat", "Fiabilité 85%")
     col3.metric("Statut Bot", "Actif", "En ligne")
     
-    st.subheader("Analyse Graphique & Indicateurs")
+    st.subheader("Analyse Graphique Avancée (Prix & RSI)")
     
-    # Préparation des données sous forme de DataFrame Pandas
+    # Préparation des données sous forme de DataFrame Pandas (avec suffisamment de lignes pour le calcul du RSI)
     data = {
-        'Date': ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06'],
-        'Open': [60000, 61200, 60800, 62100, 61500, 62300],
-        'High': [61500, 62000, 62500, 63000, 62800, 63500],
-        'Low': [59800, 60500, 60200, 61800, 61000, 62000],
-        'Close': [61200, 60800, 62100, 62900, 62200, 63100]
+        'Date': ['2026-09-23', '2026-09-24', '2026-09-25', '2026-09-26', '2026-09-27', 
+                 '2026-09-28', '2026-09-29', '2026-09-30', '2026-10-01', '2026-10-02', '2026-10-03'],
+        'Open': [57200, 57800, 58000, 58500, 59200, 58800, 59500, 60000, 61200, 60800, 62100],
+        'High': [58100, 58400, 59000, 59600, 60100, 59900, 60400, 61500, 62000, 62500, 63000],
+        'Low': [56900, 57500, 57500, 58100, 58900, 58200, 59100, 59800, 60500, 60200, 61800],
+        'Close': [57800, 58000, 58500, 59200, 59500, 58900, 60000, 61200, 60800, 62100, 62900]
     }
 
     df = pd.DataFrame(data)
     df['Date'] = pd.to_datetime(df['Date'])
 
-    # Création du graphique Plotly
-    fig = go.Figure()
+    # --- CALCULS TECHNIQUES ---
+    # 1. Calcul de la Moyenne Mobile Simple (SMA)
+    df['SMA'] = df['Close'].rolling(window=sma_period).mean()
 
-    # Ajout des chandeliers
+    # 2. Calcul du RSI
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=rsi_period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=rsi_period).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+
+    # --- CRÉATION DU GRAPHIQUE MULTI-ÉTAGES (make_subplots) ---
+    fig = make_subplots(
+        rows=2, cols=1, 
+        shared_xaxes=True, 
+        vertical_spacing=0.03, 
+        row_heights=[0.7, 0.3],
+        subplot_titles=("Évolution du BTC/USD & Moyenne Mobile", f"Indicateur RSI ({rsi_period})")
+    )
+
+    # Ligne 1 : Chandeliers Japonais
     fig.add_trace(go.Candlestick(
         x=df['Date'],
         open=df['Open'],
@@ -113,25 +140,37 @@ with tab_trading:
         low=df['Low'],
         close=df['Close'],
         name='Chandeliers'
-    ))
+    ), row=1, col=1)
 
-    # Ajout dynamique de la Moyenne Mobile si activée dans la sidebar
+    # Ligne 1 : Courbe de la Moyenne Mobile (si activée)
     if show_sma:
-        df['SMA'] = df['Close'].rolling(window=sma_period).mean()
         fig.add_trace(go.Scatter(
             x=df['Date'],
             y=df['SMA'],
             mode='lines',
             name=f'SMA {sma_period}',
             line=dict(color='orange', width=2)
-        ))
+        ), row=1, col=1)
 
+    # Ligne 2 : Courbe du RSI (si activée)
+    if show_rsi:
+        fig.add_trace(go.Scatter(
+            x=df['Date'],
+            y=df['RSI'],
+            mode='lines',
+            name='RSI',
+            line=dict(color='cyan', width=1.5)
+        ), row=2, col=1)
+        
+        # Ajout des lignes de seuil de surachat (70) et survente (30)
+        fig.add_hline(y=70, line_dash="dash", line_color="red", row=2, col=1)
+        fig.add_hline(y=30, line_dash="dash", line_color="green", row=2, col=1)
+
+    # Mise en page globale
     fig.update_layout(
-        title="Évolution du BTC/USD & Moyenne Mobile",
-        xaxis_title="Date",
-        yaxis_title="Prix (USD)",
         template="plotly_dark",
-        height=450
+        height=650,
+        xaxis_rangeslider_visible=False
     )
     
     st.plotly_chart(fig, use_container_width=True)
@@ -146,7 +185,7 @@ with tab_trading:
             order_type = st.selectbox("Type d'ordre", ["BUY", "SELL"])
         with col_o2:
             order_amount = st.number_input("Quantité / Montant", min_value=0.0001, value=1.0, format="%.4f")
-            order_price = st.number_input("Prix d'exécution (USD)", min_value=0.01, value=60000.0, format="%.2f")
+            order_price = st.number_input("Prix d'exécution (USD)", min_value=0.01, value=62000.0, format="%.2f")
             
         submit_order = st.form_submit_button("Exécuter et enregistrer l'ordre")
 
